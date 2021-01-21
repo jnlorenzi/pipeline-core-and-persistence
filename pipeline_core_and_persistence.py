@@ -4,8 +4,7 @@
 
 import os, sys
 import pickle
-import json
-import pandas
+#import pandas
 import math
 import re
 from Bio import SeqIO
@@ -568,6 +567,122 @@ def seq_prot_extractor(path_out, annotation, dico_to_extract):
                                         out_file.write(l)
         print('\nDone\n')
 
+
+def conservation_indice_calculator(ortholog, dynamic_window = True, window_dimension = 5, mod = 'all', parallel_mod = False, sub_list = ''):
+        """ Returns a dictionary with conservation indice profils for all paires of organism from the ortholog dinctionary. The 'dynamic_window' argument indicates if the value in 'window_length' is a number of CDS or proportion of all the CDS. 3 indices are available ('mod' argument): 'GOC', 'GOC2' and 'Tort'. GOC = Gene Order conservation (Rocha, 2006), GOC2 (Choulet, 2006), Tort = rate of orthologue: number of orthologous gene divided by the number of CDS. 'all' do all the indices.
+        By default, a dynamic window with 5% for the 'all' mod is executed.
+        """
+        dico = {}
+        if mod == 'all':
+                print('\n# GOC / GOC2 / Tort calculation...\n')
+                dico['GOC'] = {}
+                dico['GOC2'] = {}
+                dico['Tort'] = {}
+        elif mod == 'GOC' or mod == 'GOC2' or mod == 'Tort':
+                print('\n# ' + mod + ' calculation...\n')
+                dico[mod] = {}
+        else:
+                print('\t\'' + str(mod) + '\' - incorrect \'mod\' argument (\'GOC\'/\'GOC2\'/\'Tort\'/\'all\')')
+                return
+        if type(window_dimension) != int:
+                print('\t\'' + str(window_dimension) + '\' - incorrect \'window_dimension\' argument (positive integer)')
+                return
+        if window_dimension < 0:
+                print('\t\'' + str(window_dimension) + '\' - incorrect \'window_dimension\' argument (positive integer)')
+                return
+        if type(dynamic_window) != bool:
+                print('\t\'' + str(dynamic_window) + '\' - incorrect \'dynamic_window\' argument (boolean: True / False)')
+                return
+        i = 0
+        if not parallel_mod:
+                list_ref = ortholog.keys()
+        else:
+                list_ref = sub_list
+        for ref in list_ref:
+                if mod == 'all':
+                        dico['GOC'][ref] = {}
+                        dico['GOC2'][ref] = {}
+                        dico['Tort'][ref] = {}
+                else:
+                        dico[mod][ref] = {}
+                for tar in ortholog[ref]:
+                        i += 1
+                        if not parallel_mod:
+                                print('\r\t' + str(i) + '/' + str(len(ortholog) * len(ortholog)), end = '')
+                        else:
+                                print('\r\t' + str(i) + '/' + str(len(ortholog) * len(list_ref)), end = '')
+                        if mod == 'all':
+                                dico['GOC'][ref][tar] = []
+                                dico['GOC2'][ref][tar] = []
+                                dico['Tort'][ref][tar] = []
+                        else:
+                                dico[mod][ref][tar] = []
+                        limit = len(ortholog[ref][tar])
+                        if dynamic_window:
+                                window_length = math.ceil(limit / 100.0) * window_dimension
+                        else:
+                                window_length = window_dimension
+                        start_window = 0
+                        list_CDS_ref = sorted([CDS for CDS in ortholog[ref][tar]], key = lambda x: int(x.split('_')[1]))
+                        list_ort_tar = [ortholog[ref][tar][CDS] for CDS in list_CDS_ref]
+                        list_CDS_tar = sorted([CDS for CDS in ortholog[tar][tar]], key = lambda x: int(x.split('_')[1]))
+                        index_tar_max = len(list_CDS_tar) - 1
+                        while start_window < (limit - window_length):
+                                window = list_ort_tar[start_window:(start_window + window_length)]
+                                if mod == 'all' or mod == 'GOC' or mod == 'GOC2':
+                                        number_adjacent = 0
+                                        new = True
+                                        for index, CDS in enumerate(window):
+                                                if CDS != 'NA':
+                                                        if index < (len(window) - 1):
+                                                                index_tar = list_CDS_tar.index(window[index])
+                                                                if index_tar !=  index_tar_max and list_CDS_tar[index_tar + 1] == window[index + 1]:
+                                                                        number_adjacent += 1
+                                                                        if new:
+                                                                                number_adjacent += 1
+                                                                                new = False
+                                                                        continue
+                                                                elif index > 0 and index_tar != 0:
+                                                                        if list_CDS_tar[index_tar - 1] == window[index + 1]:
+                                                                                number_adjacent += 1
+                                                                                if new:
+                                                                                        number_adjacent += 1
+                                                                                        new = False
+                                                                        else:
+                                                                                new = True
+                                                                                continue
+                                                else:
+                                                        new = True
+                                        if mod == 'all' or mod == 'GOC':
+                                                dico['GOC'][ref][tar].append(number_adjacent / len(window))
+                                        if mod == 'all' or mod == 'GOC2':
+                                                if len([x for x in window if x != 'NA']) != 0:
+                                                        dico['GOC2'][ref][tar].append(number_adjacent / len([x for x in window if x != 'NA']))
+                                                else:
+                                                        dico['GOC2'][ref][tar].append(0)
+                                if mod == 'all' or mod == 'Tort':
+                                        dico['Tort'][ref][tar].append(len([x for x in window if x != 'NA']) / len(window))
+                                start_window += 1
+        print('\nDone\n')
+        return dico
+
+
+def profil_dict_to_csv(profil, window_dimension, path_intermediate_data):
+        ''' 
+        Converts the profil dictionary into a tabulated file. One repository by indice and one file by species.
+        '''
+        
+        for indice in sorted(profil):
+                path_out = path_intermediate_data + '/w' + str(window_dimension) + '/profil/' + str(indice) + '/'
+                if not os.path.exists(path_out):
+                        os.makedirs(path_out)
+                print(path_out)
+                for species in sorted(profil[indice]):
+                        with open(path_out + species + '.tab', 'w') as outfile:
+                                for target in sorted(profil[indice][species]):
+                                        outfile.write(target + '\t' + '\t'.join([str(x) for x in profil[indice][species][target]]) + '\n')
+
+
 def main():
     """
         Executes the core and persistence pipeline
@@ -581,7 +696,7 @@ def main():
     condition = '_coll_125'
 
     nb_core = 50 # Number of core to use for Blast
-
+    window_dimension = 1 # Lengh of the window for the conservation profil construction
     main_chromosome = False # If "True" only the main chromosome is considered
 
 
@@ -594,9 +709,12 @@ def main():
     DO_ortholog =                           True
     DO_core_genome =                        True
     DO_persistence =                        True
+    DO_conservation_profil =                True
+
 
     WRITE_core =                            True
-
+    WRITE_profil_conservation =             True
+    
     #### PATHS
 
     path_base = working_rep
@@ -689,6 +807,12 @@ def main():
                             outfile.write('\t'.join([str(pos[x].split('_')[-1].split('-')[0]) for x in sorted(pos, key = lambda x: int(x.split('_')[1]))]) + 
                                         '\n' + 
                                         '\t'.join([str(persistence[species][x]) for x in sorted(persistence[species], key = lambda x: int(x.split('_')[1]))]) + '\n')
+    
+    if DO_conservation_profil:
+        ''' GOC, GOC2 and Tort profil construction '''
+        ortholog =  pickle.load(open(path_base + '/' + 'ortholog' + condition + '.p', 'rb'))
+        conservation = conservation_indice_calculator(ortholog, dynamic_window = True, window_dimension = window_dimension, mod = 'all')
+        pickle.dump(conservation, open(path_base + '/' + 'conservation_indices' + '_w' + str(window_dimension) + condition + '.p', 'wb'))
 
     ### WRITE
 
@@ -700,6 +824,11 @@ def main():
             annotation = pickle.load(open(path_base + '/annotation' + condition + '.p', 'rb'))
             core = pickle.load(open(path_base + '/' + 'core' + condition + '.p', 'rb'))
             seq_prot_extractor(path_intermediate_data + '/seq_core/', annotation, core)
+    
+    if WRITE_profil_conservation:
+        ''' Converts the profil dictionary into a tabulated file. One repository by indice and one file by species '''
+        profil = pickle.load(open(path_base + '/' + 'conservation_indices' + '_w' + str(window_dimension) + condition + '.p', 'rb'))
+        profil_dict_to_csv(profil, window_dimension, path_intermediate_data)
 
 
 if __name__ == "__main__":

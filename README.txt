@@ -1,10 +1,22 @@
-This script generates from gbk file the core genome and the persistence score for each genome contains in the repository.
+This script generates from gbk files the core genome, the persistence and synteny score for each genome.
 
 It must be executed in the directory containing the ".gbk" folder (gbk_coll_125).
 
-Each step of the pipeline can be executed independently of the others by modifying the "operations to do" (true/false booleans) from line 589 to 598.
+Each step of the pipeline can be executed independently of the others by modifying the "operations to do" (true/false booleans) from line 703 to 716.
 
-The 'nb_core' parameter line 583 (by default 50) indicates the number of cores to be used at the maximum during the Blast step.
+The 'nb_core' parameter line 697 (by default 50) indicates the number of cores to be used at the maximum during the Blast step.
+The 'window_dimension' parameter line 698 (by default 1) indicates the dimension of window to use for synteny score (proporation of the genome, 1 = 1% of the total number of genes).
 
-The data given in "gbk_coll_125" and "Blast" are a test set. 
-The data gbk_col_125 is the input data. The Blast folder contains the Blast outputs on this data set so that you don't have to run it during the test.
+Mods requiered :
+
+os
+sys
+pickle
+math
+re
+Bio
+
+Blast requirements :
+
+Blast+
+GNU Parallel
